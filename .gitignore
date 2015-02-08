@@ -1,0 +1,5 @@
+*.o
+unlock
+dump
+*.swp
+*.dSYM

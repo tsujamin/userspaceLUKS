@@ -2,7 +2,7 @@ OBJ = phdr.o af.o crypto_openssl.o
 CC = gcc
 CFLAGS = -Wall -Werror -g -Wno-deprecated -I/usr/local/opt/openssl/include 
 LDFLAGS = -lssl -lcrypto -lz -L/usr/local/opt/openssl/lib
-default: dump
+default: dump unlock
 
 %.o : %.c
 	$(CC) $(CFLAGS) -c $< -o $@ 
@@ -11,3 +11,5 @@ dump : $(OBJ) dump_main.c
 unlock : $(OBJ) unlock_main.c
 	$(CC) $(CFLAGS) $(OBJ) $(LDFLAGS) unlock_main.c -o unlock
 
+clean: 
+	rm -f *.o dump unlock

@@ -34,7 +34,7 @@
 #include "crypto_backend.h"
 
 //
-// FROM random.c
+// FROM cryptsetup random.c
 //
 /* URANDOM_DEVICE access */
 static int _get_urandom(struct crypt_device *ctx __attribute__((unused)),
