@@ -7,7 +7,8 @@
 
 int main(int argc, char * argv[])
 {
-    int out_fd, dev_fd;
+    int out_fd, dev_fd, mk_len;
+    char ** mk = malloc(sizeof(char *));
     struct luks_phdr phdr;
 
     if(argc < 2) {
@@ -27,7 +28,9 @@ int main(int argc, char * argv[])
     if(luks_load_phdr(argv[1], &phdr, &dev_fd))
         return 1;
 
-    luks_print_phdr(out_fd, &phdr);
-    
+    if(!luks_get_mk(mk, &mk_len, &phdr, dev_fd))
+        printf("Master key unlocked!\n");
+    else 
+        printf("No matching keyslots\n");
     return 0;
 }
