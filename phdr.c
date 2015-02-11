@@ -38,7 +38,7 @@ int luks_load_phdr(const char * dev_file, struct luks_phdr *hdr, int * fd)
     } else if(res != sizeof(struct luks_phdr)) {
         printf("unable to read entire LUKS header\n");
         return 1;
-    } else if(!strncmp(hdr->magic, LUKS_MAGIC, MAGIC_L)) {
+    } else if(!strncmp((const char *) hdr->magic, (const char *) LUKS_MAGIC, MAGIC_L)) {
         printf("not a LUKS volume\n");
         return 1;
     }
