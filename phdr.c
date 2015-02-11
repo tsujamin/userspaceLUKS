@@ -13,6 +13,15 @@ const uint8_t LUKS_MAGIC[] =  {'L', 'U', 'K', 'S', 0xBA, 0xBE};
 
 int openssl_init = 0;
 
+
+/*
+ * Initialiser for LUKS functions
+ */
+void luks_init()
+{
+    crypt_backend_init(0);
+}
+
 /*
  * Read the LUKS header from the provided file. All int fields are Little Endian
  * dev_file: path to LUKS disk file
@@ -124,7 +133,7 @@ int luks_get_mk_cand(struct luks_phdr * hdr, int fd, int ks_num,
         return 1;
 
     //Hash, returns 1 on success
-    if(!crypt_pbkdf("pbkdf2", hdr->hashSpec,
+    if(crypt_pbkdf("pbkdf2", hdr->hashSpec,
             passphrase, pass_len,
             (char *) ks->salt, LUKS_SALT_SIZE,
             key_hash, hdr->keyBytes,
@@ -134,7 +143,7 @@ int luks_get_mk_cand(struct luks_phdr * hdr, int fd, int ks_num,
     }
 
     //Get split key
-    if(luks_decrypt_sectors(hdr, fd, ks->kmOffset, -ks->kmOffset, key_hash, sector_data, split_key_len)) {
+    if(luks_decrypt_sectors(hdr, fd, ks->kmOffset, ks->kmOffset, key_hash, sector_data, split_key_len)) {
         ret = 1;
         goto end;
     }
@@ -165,8 +174,9 @@ int luks_encop(struct luks_phdr * hdr,
 {
     assert(sector >=0 && buf && len >=0);
 
-    int block_size = 0;
-    struct crypt_storage ** ctx;
+    int block_size = 0,
+        ret = 0;
+    struct crypt_storage ** ctx = malloc(sizeof(*ctx));
     int (*op)(struct crypt_storage *, uint64_t, size_t, char *) = enc ?
         crypt_storage_encrypt : crypt_storage_decrypt;
 
@@ -176,15 +186,21 @@ int luks_encop(struct luks_phdr * hdr,
     //starting at 8 would pass 10-8=2
     if(crypt_storage_init(ctx, sector,
                 hdr->cipherName, hdr->cipherMode,
-                key, hdr->keyBytes))
-        return 1;
-    
-    if(op(*ctx, sector, len / SECTOR_SIZE, buf)) {
-        crypt_storage_destroy(*ctx);
-        return 1;
+                key, hdr->keyBytes)) {
+        ret = 1;
+        goto end;
     }
 
-    return 0;
+    if(op(*ctx, sector, len / SECTOR_SIZE, buf)) {
+        crypt_storage_destroy(*ctx);
+        ret = 1;
+        goto end;
+    }
+
+end:
+    free(ctx);
+
+    return ret;
 }
 
 /*
@@ -192,7 +208,7 @@ int luks_encop(struct luks_phdr * hdr,
  * hdr: header of drive we are encrypting for
  * fd: file descriptor of enc'd drive
  * sector: sector to read from
- * iv_offset: value to add to sector to get correct IV
+ * iv_offset: value to sub from sector to get correct IV
  * key: key buffer to use
  * out: buffer to write
  * len: length of data to read
@@ -215,7 +231,7 @@ int luks_decrypt_sectors(struct luks_phdr * hdr, int fd,
  * hdr: header of drive we are encrypting for
  * fd: file descriptor of enc'd drive
  * sector: sector to write to
- * iv_offset: value to add to sector to get correct IV
+ * iv_offset: value to sub from sector to get correct IV
  * key: key buffer to use
  * out: buffer to read
  * len: length of data to read
@@ -252,17 +268,16 @@ end:
 int luks_get_mk(char **mk, int * mk_len, struct luks_phdr * hdr, int fd)
 {
     *mk_len = hdr->keyBytes;
-    int ret = 0;
+    int ret = 1;
     char * mk_cand = malloc(*mk_len),
          * mk_hash = malloc(LUKS_DIGEST_SIZE);
     char * passphrase;
     
     passphrase = getpass("Enter passphrase: ");
 
-    if(!(mk_cand && mk_hash)) {
-        ret = 1;
+    if(!(mk_cand && mk_hash)) 
         goto end;
-    }
+    
 
 
     for(int i = 0; i < LUKS_NUMKEYS; i++) {
@@ -270,16 +285,16 @@ int luks_get_mk(char **mk, int * mk_len, struct luks_phdr * hdr, int fd)
                     strlen(passphrase)))
             continue;
          //Hash, returns 1 on success
-        if(!crypt_pbkdf("pbkdf2", hdr->hashSpec,
+        if(crypt_pbkdf("pbkdf2", hdr->hashSpec,
                     mk_cand, *mk_len,
                     (char *) hdr->mkSalt, LUKS_SALT_SIZE,
                     mk_hash, LUKS_DIGEST_SIZE,
-                    hdr->mkIterations)) {
-            ret = 1;
+                    hdr->mkIterations)) 
             goto end_fail;
-        }
+        
 
         if(!strncmp(mk_hash, (char * ) hdr->mkDigest, LUKS_DIGEST_SIZE)) {
+            ret = 0;
             *mk = mk_cand;
             goto end;
         }      

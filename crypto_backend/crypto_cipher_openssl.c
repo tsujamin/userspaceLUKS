@@ -101,7 +101,7 @@ int crypt_cipher_init(struct crypt_cipher **ctx, const char *name,
 	if(!strcmp(mode, "xts")) // XTS key needs to be halved
 		key_len /= 2;
 	
-	snprintf(ciph_str, 128, "%s_%d_%s", name, key_len, mode);
+	snprintf(ciph_str, 128, "%s-%d-%s", name, key_len, mode);
 
 	ec = (EVP_CIPHER *) EVP_get_cipherbyname(ciph_str);
 	if(!ec || length != EVP_CIPHER_key_length(ec))
@@ -136,7 +136,7 @@ int crypt_cipher_op(struct crypt_cipher *ctx,
 	EVP_CIPHER_CTX_init(&evp_ctx);
 	
 	if( 	iv_length != EVP_CIPHER_iv_length(ctx->ciph) ||
-	 	EVP_CipherInit(&evp_ctx, ctx->ciph, ctx->key, 
+	 	!EVP_CipherInit(&evp_ctx, ctx->ciph, ctx->key, 
 			(unsigned char *) iv, enc))
 		return -ENOTSUP;
 

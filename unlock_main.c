@@ -25,6 +25,8 @@ int main(int argc, char * argv[])
         return 1;
     }
 
+    luks_init();
+
     if(luks_load_phdr(argv[1], &phdr, &dev_fd))
         return 1;
 

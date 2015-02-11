@@ -49,6 +49,8 @@ struct luks_phdr {
         struct key_slot keyslots[LUKS_NUMKEYS];
 };
 
+void luks_init();
+
 int luks_load_phdr(const char * dev_file, struct luks_phdr *hdr, int * fd);
 void luks_print_phdr(int fd, struct luks_phdr * hdr);
 
