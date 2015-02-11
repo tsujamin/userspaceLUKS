@@ -89,7 +89,6 @@ int crypt_cipher_blocksize(const char *name)
 int crypt_cipher_init(struct crypt_cipher **ctx, const char *name,
 		    const char *mode, const void *buffer, size_t length)
 {
-	char * mode_sep = strchr(mode, '-');
 	char ciph_str[128];
 	int key_len = length * 8;
 	struct crypt_cipher *cc;
@@ -99,17 +98,10 @@ int crypt_cipher_init(struct crypt_cipher **ctx, const char *name,
 	if(!cc)
 		return -ENOMEM;
 
-	//Generate openssl format cipher string
-	if(mode_sep)
-		*mode_sep = '\0';
-	
-	if(!strcmp(mode_sep, "xts")) // XTS key needs to be halved
+	if(!strcmp(mode, "xts")) // XTS key needs to be halved
 		key_len /= 2;
 	
 	snprintf(ciph_str, 128, "%s_%d_%s", name, key_len, mode);
-
-	if(mode_sep)
-		*mode_sep = '-';
 
 	ec = (EVP_CIPHER *) EVP_get_cipherbyname(ciph_str);
 	if(!ec || length != EVP_CIPHER_key_length(ec))

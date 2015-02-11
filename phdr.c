@@ -7,6 +7,7 @@
 #include "phdr.h"
 
 #define hex_print(fd, len, arr) dprintf(fd, "0x"); for(int i = 0; i < len; i++) {dprintf(fd, "%x", arr[i]);}
+#define SECTOR_SIZE 512 //Hardcoded in crypto_service
 
 const uint8_t LUKS_MAGIC[] =  {'L', 'U', 'K', 'S', 0xBA, 0xBE};
 
@@ -115,26 +116,25 @@ int luks_get_mk_cand(struct luks_phdr * hdr, int fd, int ks_num,
     struct key_slot * ks = &hdr->keyslots[ks_num];
     int ret = 0,
         split_key_len = hdr->keyBytes * ks->stripes;
-    unsigned char * key_hash = malloc(hdr->keyBytes),
+    char * key_hash = malloc(hdr->keyBytes),
                   * sector_data = malloc(split_key_len);
     
     //check if active
     if(ks->active != LUKS_KEY_ENABLED)
         return 1;
 
-    //TODO Check and exec for non SHA pbkdf2
-    assert(!strcmp(hdr->hashSpec, "sha1"));
-
     //Hash, returns 1 on success
-    ret = PKCS5_PBKDF2_HMAC_SHA1(passphrase, pass_len,
-        ks->salt, LUKS_SALT_SIZE, ks->iterations,
-        hdr->keyBytes, key_hash);
-    
+    ret = crypt_pbkdf("pbkdf2", hdr->hashSpec,
+            passphrase, pass_len,
+            (char *) ks->salt, LUKS_SALT_SIZE,
+            key_hash, hdr->keyBytes,
+            ks->iterations);
+
     if(!ret)
         return !ret;
 
     //Get split key
-    if(luks_decrypt_sectors(fd, ks->kmOffset, key_hash, sector_data, split_key_len))
+    if(luks_decrypt_sectors(hdr, fd, ks->kmOffset, -ks->kmOffset, key_hash, sector_data, split_key_len))
         return 1;
 
     if(AF_merge((char *) sector_data, mkey_cand, hdr->keyBytes, ks->stripes, hdr->hashSpec)< 0) 
@@ -144,55 +144,103 @@ int luks_get_mk_cand(struct luks_phdr * hdr, int fd, int ks_num,
     return 0;    
 }
 
-int luks_decrypt_sectors(int fd, uint64_t sector, unsigned char * key,
-        unsigned char * out, int len)
+/*
+ * Performs an encryption operation inplace
+ * hdr: header of drive we are encrypting for
+ * iv_sector: effective sector to generate IV's from
+ * key: key buffer to use
+ * out: buffer to read/write
+ * len: length of buffer to operate on
+ * enc: if true then encryption operation
+ */
+int luks_encop(struct luks_phdr * hdr, 
+        uint64_t sector, unsigned char * key, 
+        unsigned char * buf, int len, int enc)
 {
-    //TODO probably leaks ctx
-    assert(sector >= 0 && out && len >=0);
+    assert(sector >=0 && buf && len >=0);
 
     int block_size = 0;
-    unsigned char * ciphertext = malloc(len),
-                  * IV = malloc(EVP_CIPHER_iv_length(EVP_aes_128_xts()));
-    EVP_CIPHER_CTX ctx;
+    struct crypt_storage ** ctx;
+    int (*op)(struct crypto_storage *, uint64_t, size_t, char *) = enc ?
+        crypt_storage_encrypt : crypt_storage_decrypt;
 
-    //Zero the IV and Key
-    memset(IV, 0, EVP_CIPHER_iv_length(EVP_aes_128_xts()));
-
-    //Get blocksize for read
-    if(ioctl(fd, DKIOCGETBLOCKSIZE, &block_size))
+    //get a cryptostorage struct
+    //we set the start sector as sector we want to read minus where the
+    //section starts, ie reading key material 2 sectors into a keyblock
+    //starting at 8 would pass 10-8=2
+    if(crypt_storage_init(ctx, sector,
+                hdr->cipherName, hdr->cipherMode,
+                key, hdr->keyBytes))
         return 1;
-
-    //Read ciphertext
-    if(pread(fd, ciphertext, len, sector * block_size) != len) {
-        free(ciphertext);
+    
+    if(op(*ctx, sector, len / SECTOR_SIZE, buf)) {
+        crypt_storage_destroy(*ctx);
         return 1;
-    }
-
-
-    //decrypt
-    int offset = 0,
-	written = 0;
-    while(offset < len) {
-	//init ctx for this round
-	EVP_CIPHER_CTX_init(&ctx);
-
-	//Set new IV and decrypt block
-	*(uint64_t *) IV = offset/block_size; //Iv offset starts at 0 for ks blocks
-	if(!EVP_DecryptInit(&ctx, EVP_aes_128_xts(), key, IV))
-		return 1;
-	if(!EVP_DecryptUpdate(&ctx, out + offset, &written, ciphertext + offset, block_size))
-		return 1; //return if either fail
-        assert(written == block_size);
-	offset += written;
-
-	//Call final
-	if(!EVP_DecryptFinal(&ctx, out + offset, &written))
-		return 1;
-	assert(written == 0); //TEST
-	offset += written;
     }
 
     return 0;
+}
+
+/*
+ * Decrypts sectors and returns
+ * hdr: header of drive we are encrypting for
+ * fd: file descriptor of enc'd drive
+ * sector: sector to read from
+ * iv_offset: value to add to sector to get correct IV
+ * key: key buffer to use
+ * out: buffer to write
+ * len: length of data to read
+ */
+int luks_decrypt_sectors(struct luks_phdr * hdr, int fd, 
+        uint64_t sector, uint64_t iv_offset, 
+        unsigned char * key, unsigned char * out, int len)
+{
+    //Read the cipgertext
+    if(pread(fd, out, len, sector*SECTOR_SIZE) != len) 
+        return 1;
+    
+
+    //Decrypt the ciphertext
+    return luks_encop(hdr, sector - iv_offset, key, out, len, 0);
+}
+
+/*
+ * Encrypts data and writes to sectors
+ * hdr: header of drive we are encrypting for
+ * fd: file descriptor of enc'd drive
+ * sector: sector to write to
+ * iv_offset: value to add to sector to get correct IV
+ * key: key buffer to use
+ * out: buffer to read
+ * len: length of data to read
+ */
+int luks_encrypt_sectors(struct luks_phdr * hdr, int fd, 
+        uint64_t sector, uint64_t iv_offset, 
+        unsigned char * key, unsigned char * in, int len)
+{
+    //copy the data to be encrypted incase the user still needs it
+    char * enc_buff = malloc(len);
+    int ret = 0;
+    memcpy(enc_buff, in, len);
+    if(!enc_buff)
+        return 1;
+
+    //encrypt
+    if(luks_encop(hdr, sector - iv_offset, key, enc_buff, len, 1)) {
+        ret = 1;
+        goto end;
+    }
+
+    //Write to sectors
+    if(pwrite(fd, enc_buff, len, sector) != len) {
+        ret = 1;
+        goto end;
+    }
+
+end:
+    free(enc_buff);
+    return ret;
+
 }
 
 int luks_get_mk(char **mk, int * mk_len, struct luks_phdr * hdr, int fd)
@@ -209,9 +257,11 @@ int luks_get_mk(char **mk, int * mk_len, struct luks_phdr * hdr, int fd)
                     strlen(passphrase)))
             continue;
          //Hash, returns 1 on success
-        if(!PKCS5_PBKDF2_HMAC_SHA1(mk_cand, *mk_len,
-            hdr->mkSalt, LUKS_SALT_SIZE, hdr->mkIterations,
-            LUKS_DIGEST_SIZE, (unsigned char *) mk_hash))
+        if(!crypt_pbkdf("pbkdf2", hdr->hashSpec,
+                    mk_cand, *mk_len,
+                    (char *) hdr->mkSalt, LUKS_SALT_SIZE,
+                    mk_hash, LUKS_DIGEST_SIZE,
+                    hdr->mkIterations))
             return 1; //fail
 
         if(!strncmp(mk_hash, (char * ) hdr->mkDigest, LUKS_DIGEST_SIZE)) {

@@ -6,8 +6,9 @@
 #include <openssl/evp.h>
 #include <sys/ioctl.h>
 #include <sys/disk.h>
-#include "af.h"
 #include <pwd.h>
+#include "af.h"
+#include "crypto_backend.h"
 
 //Field lengths
 #define MAGIC_L 6
@@ -55,7 +56,8 @@ void luks_print_phdr(int fd, struct luks_phdr * hdr);
 
 int luks_get_mk_cand(struct luks_phdr * hdr, int fd, int ks, void * mkey_cand, int mkey_len, char * passphrase, int pass_len);
 
-int luks_decrypt_sectors(int fd, uint64_t sector, unsigned char * key, unsigned char * out, int len);
+int luks_decrypt_sectors(struct luks_phdr * hdr, int fd, uint64_t sector, uint64_t iv_offset, unsigned char * key, unsigned char * out, int len);
+int luks_encrypt_sectors(struct luks_phdr * hdr, int fd, uint64_t sector, uint64_t iv_offset, unsigned char * key, unsigned char * in, int len);
 int luks_get_mk(char **mk, int * mk_len, struct luks_phdr * hdr, int fd);
 
 #endif /* PHDR_H */
