@@ -32,5 +32,7 @@ int main(int argc, char * argv[])
         printf("Master key unlocked!\n");
     else 
         printf("No matching keyslots\n");
+
+    memset(*mk, 0, phdr.keyBytes);
     return 0;
 }
