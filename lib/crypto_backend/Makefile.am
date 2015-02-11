@@ -1,4 +1,4 @@
-moduledir = cryptsetup
+moduledir = lib/cryptsetup
 
 noinst_LTLIBRARIES = libcrypto_backend.la
 

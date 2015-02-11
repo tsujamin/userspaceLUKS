@@ -1,12 +1,7 @@
 #ifndef PHDR_H
 #define PHDR_H
 
-#include <assert.h>
 #include <stdint.h>
-#include <openssl/evp.h>
-#include <pwd.h>
-#include "af.h"
-#include "crypto_backend.h"
 
 //Field lengths
 #define MAGIC_L 6

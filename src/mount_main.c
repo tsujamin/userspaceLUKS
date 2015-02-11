@@ -2,6 +2,7 @@
 
 #include <fuse.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "phdr.h"
 
