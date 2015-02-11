@@ -16,6 +16,11 @@ PKG_CHECK_MODULES([OPENSSL],[openssl])
 AC_SUBST([OPENSSL_CFLAGS])
 AC_SUBST([OPENSSL_LIBS])
 
+PKG_CHECK_MODULES([FUSE],[fuse])
+AC_SUBST([FUSE_CFLAGS])
+AC_SUBST([FUSE_LIBS])
+
+
 # Checks for header files.
 AC_FUNC_ALLOCA
 AC_CHECK_HEADERS([arpa/inet.h fcntl.h netinet/in.h stddef.h stdint.h stdlib.h string.h sys/ioctl.h sys/param.h sys/time.h unistd.h])
