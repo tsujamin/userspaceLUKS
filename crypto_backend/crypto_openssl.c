@@ -240,13 +240,18 @@ int crypt_pbkdf(const char *kdf, const char *hash,
 		char *key, size_t key_length,
 		unsigned int iterations)
 {
+	const EVP_MD *hash_id;
+
 	if (!kdf || strncmp(kdf, "pbkdf2", 6))
 		return -EINVAL;
 
+	hash_id = EVP_get_digestbyname(hash);
+	if (!hash_id)
+		return -EINVAL;
 
-	if (!PKCS5_PBKDF2_HMAC_SHA1(password, (int)password_length,
+	if (!PKCS5_PBKDF2_HMAC(password, (int)password_length,
 	    (unsigned char *)salt, (int)salt_length,
-            (int)iterations, (int)key_length, (unsigned char *)key))
+            (int)iterations, hash_id, (int)key_length, (unsigned char *)key))
 		return -EINVAL;
 
 	return 0;
