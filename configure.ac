@@ -3,7 +3,7 @@
 
 AC_PREREQ([2.69])
 AC_INIT([dumpLUKS], [0.1], [benjamin@BGRoberts.id.au])
-AM_INIT_AUTOMAKE
+AM_INIT_AUTOMAKE([foreign])
 LT_INIT
 AC_CONFIG_SRCDIR([lib/phdr.c])
 AC_CONFIG_HEADERS([config.h])
