@@ -4,8 +4,6 @@
 #include <assert.h>
 #include <stdint.h>
 #include <openssl/evp.h>
-#include <sys/ioctl.h>
-#include <sys/disk.h>
 #include <pwd.h>
 #include "af.h"
 #include "crypto_backend.h"

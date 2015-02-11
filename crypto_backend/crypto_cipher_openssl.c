@@ -25,7 +25,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/stat.h>
-#include <openssl/EVP.h>
+#include <openssl/evp.h>
 #include "crypto_backend.h"
 
 struct crypt_cipher {
