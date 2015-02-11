@@ -3,3 +3,6 @@ unlock
 dump
 *.swp
 *.dSYM
+*.la
+*.lo
+*Makefile
