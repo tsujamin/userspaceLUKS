@@ -18,7 +18,7 @@ int openssl_init = 0;
  * dev_file: path to LUKS disk file
  * hdr: PTR to luks_phdr struct to fill
  * fd: pointer to integer to return FD as, can be NULL
- * Return: 0 on success, -1 on fail
+ * Return: 0 on success, 1 on fail
  */
 int luks_load_phdr(const char * dev_file, struct luks_phdr *hdr, int * fd)
 {
@@ -34,10 +34,10 @@ int luks_load_phdr(const char * dev_file, struct luks_phdr *hdr, int * fd)
 
     if(res == -1) {
         perror("error reading disk");
-        return -1;
+        return 1;
     } else if(res != sizeof(struct luks_phdr)) {
         printf("unable to read entire LUKS header\n");
-        return -1;
+        return 1;
     }
 
     //Save FD
@@ -110,38 +110,41 @@ int luks_get_mk_cand(struct luks_phdr * hdr, int fd, int ks_num,
     assert(passphrase && mkey_cand && hdr);
     assert(mkey_len == hdr->keyBytes);
 
-    if(!openssl_init)
-        OpenSSL_add_all_algorithms();
-
     struct key_slot * ks = &hdr->keyslots[ks_num];
     int ret = 0,
         split_key_len = hdr->keyBytes * ks->stripes;
-    char * key_hash = malloc(hdr->keyBytes),
-                  * sector_data = malloc(split_key_len);
+    char    * key_hash = malloc(hdr->keyBytes),
+            * sector_data = malloc(split_key_len);
     
     //check if active
     if(ks->active != LUKS_KEY_ENABLED)
         return 1;
 
     //Hash, returns 1 on success
-    ret = crypt_pbkdf("pbkdf2", hdr->hashSpec,
+    if(!crypt_pbkdf("pbkdf2", hdr->hashSpec,
             passphrase, pass_len,
             (char *) ks->salt, LUKS_SALT_SIZE,
             key_hash, hdr->keyBytes,
-            ks->iterations);
-
-    if(!ret)
-        return !ret;
+            ks->iterations)) {
+        ret = 1;
+        goto end;
+    }
 
     //Get split key
-    if(luks_decrypt_sectors(hdr, fd, ks->kmOffset, -ks->kmOffset, key_hash, sector_data, split_key_len))
-        return 1;
+    if(luks_decrypt_sectors(hdr, fd, ks->kmOffset, -ks->kmOffset, key_hash, sector_data, split_key_len)) {
+        ret = 1;
+        goto end;
+    }
+    
+    if(AF_merge((char *) sector_data, mkey_cand, hdr->keyBytes, ks->stripes, hdr->hashSpec)< 0) {
+        ret = 1;
+        goto end;
+    }
 
-    if(AF_merge((char *) sector_data, mkey_cand, hdr->keyBytes, ks->stripes, hdr->hashSpec)< 0) 
-        return 1;
-
-
-    return 0;    
+end:
+    free(key_hash);
+    free(sector_data);
+    return ret;    
 }
 
 /*
@@ -154,14 +157,14 @@ int luks_get_mk_cand(struct luks_phdr * hdr, int fd, int ks_num,
  * enc: if true then encryption operation
  */
 int luks_encop(struct luks_phdr * hdr, 
-        uint64_t sector, unsigned char * key, 
-        unsigned char * buf, int len, int enc)
+        uint64_t sector, char * key, 
+        char * buf, int len, int enc)
 {
     assert(sector >=0 && buf && len >=0);
 
     int block_size = 0;
     struct crypt_storage ** ctx;
-    int (*op)(struct crypto_storage *, uint64_t, size_t, char *) = enc ?
+    int (*op)(struct crypt_storage *, uint64_t, size_t, char *) = enc ?
         crypt_storage_encrypt : crypt_storage_decrypt;
 
     //get a cryptostorage struct
@@ -193,7 +196,7 @@ int luks_encop(struct luks_phdr * hdr,
  */
 int luks_decrypt_sectors(struct luks_phdr * hdr, int fd, 
         uint64_t sector, uint64_t iv_offset, 
-        unsigned char * key, unsigned char * out, int len)
+        char * key, char * out, int len)
 {
     //Read the cipgertext
     if(pread(fd, out, len, sector*SECTOR_SIZE) != len) 
@@ -216,7 +219,7 @@ int luks_decrypt_sectors(struct luks_phdr * hdr, int fd,
  */
 int luks_encrypt_sectors(struct luks_phdr * hdr, int fd, 
         uint64_t sector, uint64_t iv_offset, 
-        unsigned char * key, unsigned char * in, int len)
+        char * key, char * in, int len)
 {
     //copy the data to be encrypted incase the user still needs it
     char * enc_buff = malloc(len);
@@ -246,11 +249,18 @@ end:
 int luks_get_mk(char **mk, int * mk_len, struct luks_phdr * hdr, int fd)
 {
     *mk_len = hdr->keyBytes;
+    int ret = 0;
     char * mk_cand = malloc(*mk_len),
-                  * mk_hash = malloc(LUKS_DIGEST_SIZE);
+         * mk_hash = malloc(LUKS_DIGEST_SIZE);
     char * passphrase;
-
+    
     passphrase = getpass("Enter passphrase: ");
+
+    if(!(mk_cand && mk_hash)) {
+        ret = 1;
+        goto end;
+    }
+
 
     for(int i = 0; i < LUKS_NUMKEYS; i++) {
         if(luks_get_mk_cand(hdr, fd, i, mk_cand, *mk_len, passphrase,
@@ -261,13 +271,23 @@ int luks_get_mk(char **mk, int * mk_len, struct luks_phdr * hdr, int fd)
                     mk_cand, *mk_len,
                     (char *) hdr->mkSalt, LUKS_SALT_SIZE,
                     mk_hash, LUKS_DIGEST_SIZE,
-                    hdr->mkIterations))
-            return 1; //fail
+                    hdr->mkIterations)) {
+            ret = 1;
+            goto end_fail;
+        }
 
         if(!strncmp(mk_hash, (char * ) hdr->mkDigest, LUKS_DIGEST_SIZE)) {
             *mk = mk_cand;
-            return 0;
+            goto end;
         }      
     }
-    return 1;
+
+end_fail:
+    free(mk_cand);
+end:
+    memset(passphrase, 0, strlen(passphrase));
+    free(passphrase);
+    free(mk_hash);
+
+    return ret;
 }

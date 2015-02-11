@@ -48,16 +48,14 @@ struct luks_phdr {
         char uuid[UUID_L];
         struct key_slot keyslots[LUKS_NUMKEYS];
 };
-//assert(sizeof(struct luks_phdr) == LUKS_PHDR_SIZE);
 
 int luks_load_phdr(const char * dev_file, struct luks_phdr *hdr, int * fd);
-
 void luks_print_phdr(int fd, struct luks_phdr * hdr);
 
+int luks_get_mk(char **mk, int * mk_len, struct luks_phdr * hdr, int fd);
 int luks_get_mk_cand(struct luks_phdr * hdr, int fd, int ks, void * mkey_cand, int mkey_len, char * passphrase, int pass_len);
 
-int luks_decrypt_sectors(struct luks_phdr * hdr, int fd, uint64_t sector, uint64_t iv_offset, unsigned char * key, unsigned char * out, int len);
-int luks_encrypt_sectors(struct luks_phdr * hdr, int fd, uint64_t sector, uint64_t iv_offset, unsigned char * key, unsigned char * in, int len);
-int luks_get_mk(char **mk, int * mk_len, struct luks_phdr * hdr, int fd);
+int luks_decrypt_sectors(struct luks_phdr * hdr, int fd, uint64_t sector, uint64_t iv_offset, char * key, char * out, int len);
+int luks_encrypt_sectors(struct luks_phdr * hdr, int fd, uint64_t sector, uint64_t iv_offset, char * key, char * in, int len);
 
 #endif /* PHDR_H */
