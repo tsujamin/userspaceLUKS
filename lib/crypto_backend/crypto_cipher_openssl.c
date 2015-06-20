@@ -3,6 +3,7 @@
  *
  * Copyright (C) 2012, Red Hat, Inc. All rights reserved.
  * Copyright (C) 2012-2014, Milan Broz
+ * Copyright (C) 2014, Benjamin Roberts
  *
  * This file is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -25,7 +26,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/stat.h>
-#include <openssl/EVP.h>
+#include <openssl/evp.h>
 #include "crypto_backend.h"
 
 struct crypt_cipher {

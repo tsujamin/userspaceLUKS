@@ -1,8 +1,15 @@
 #include <unistd.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <string.h>
 #include <arpa/inet.h>
+#include <assert.h>
+#include <stdint.h>
+#include <pwd.h>
+#include "af.h"
+#include "crypto_backend.h"
+
 
 #include "phdr.h"
 

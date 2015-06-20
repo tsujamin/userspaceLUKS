@@ -1,9 +1,0 @@
-# Building on OSX:
-The version of OpenSSL present on OSX is missing the PKCS5_PBKDF2_HMAC, causing libcrypto_backend to not compile. As such it must be compiled against a different copy of OpenSSL, such as from Homebrew.
-
-```bash
-brew install openssl
-export OPENSSL_LIBS=$(PKG_CONFIG_PATH=$(brew --prefix openssl)/lib/pkgconfig/ pkg-config --libs openssl)
-export OPENSSL_CFLAGS=$(PKG_CONFIG_PATH=$(brew --prefix openssl)/lib/pkgconfig/ pkg-config --cflags openssl)
-./configure
-```

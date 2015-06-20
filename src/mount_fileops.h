@@ -7,7 +7,7 @@
 #include <string.h>
 #include <fuse.h>
 #include <sys/stat.h>
-#include <sys/ioctl.h>
+#include <sys/disk.h>
 #include <unistd.h>
 #include "phdr.h"
 #include "mount_main.h"
