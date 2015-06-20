@@ -1,4 +1,49 @@
 #include "mount_fileops.h"
+#define decrypt(luks_private, sector, buf, len)  luks_decrypt_sectors( \
+                     &luks_private->hdr, luks_private->device_fd, \
+                     sector, luks_private->hdr.payloadOffset, \
+                     *luks_private->mk, buf, len)
+
+int crypt_read(char * buf, size_t size, off_t offset)
+{
+    struct luks_private *private = fuse_get_context()->private_data;
+    char *dec_buf = malloc(512);
+    uint64_t sector = offset/512 + private->hdr.payloadOffset;
+    size_t size_read = 0;
+
+    //Decrypt first non-block sized sector, IV offset is start of payload
+    if(decrypt(private, sector, dec_buf, 512 - (offset % 512)))
+        goto encrypt_ret;
+
+    sector++;
+    size_read += 512 - (offset % 512);
+    memcpy(buf, dec_buf, size_read);
+
+    //Read middle blocks
+    while(size_read < (size & ~0x1FF)) { //TODO check
+        if(decrypt(private, sector, dec_buf, 512))
+            goto encrypt_ret;
+
+        sector++;
+        memcpy(buf + size_read, dec_buf, 512);
+        size_read += 512;
+    }
+
+    //decrypt last, non-block sized sector
+    if(size % 512) {
+        if(decrypt(private, sector, dec_buf, size % 512))
+            goto encrypt_ret;
+
+        memcpy(buf + size_read, dec_buf, size % 512);
+        size_read += size % 512;
+    }
+
+encrypt_ret:
+    memset(dec_buf, 0, 512);
+    free(dec_buf);
+    return size_read;
+}
+
 
 int luks_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                 off_t offseet,  struct fuse_file_info *fi)
@@ -80,44 +125,11 @@ int luks_read(const char *path, char *buf, size_t size, off_t offset,
               struct fuse_file_info *fi)
 {
     if(strcmp(path, BLOCK_NODE) == 0) {
-        struct luks_private *private = fuse_get_context()->private_data;
-        char *dec_buf = malloc(512);
-        uint64_t sector = offset/512 + private->hdr.payloadOffset;
-        size_t size_read = 0;
+        return crypt_read(buf, size, offset);
+    }
 
-        //Decrypt first non-block sized sector, IV offset is start of payload
-        if(luks_decrypt_sectors(&private->hdr, private->device_fd, sector, private->hdr.payloadOffset,
-                            *private->mk, dec_buf, 512 - (offset % 512))) {
-            goto block_ret;
-        }
-        sector++;
-        size_read += 512 - (offset % 512);
-        memcpy(buf, dec_buf, size_read);
-
-        //Read middle blocks
-        while(size_read < (size & ~0x1FF)) { //TODO check
-            if(luks_decrypt_sectors(&private->hdr, private->device_fd, sector, private->hdr.payloadOffset,
-                                *private->mk, dec_buf, 512)) {
-                goto block_ret;
-            }
-            sector++;
-            memcpy(buf + size_read, dec_buf, 512);
-            size_read += 512;
-        }
-
-        //decrypt last, non-block sized sector
-        if(size % 512) {
-            if(luks_decrypt_sectors(&private->hdr, private->device_fd, sector, private->hdr.payloadOffset,
-                                *private->mk, dec_buf, size % 512)) {
-                goto block_ret;
-            }
-            memcpy(buf + size_read, dec_buf, size % 512);
-            size_read += size % 512;
-        }
-
-block_ret:
-        memset(dec_buf, 0, 512);
-        return size;
+    return -ENOENT;
+}
     }
 
     return -ENOENT;
