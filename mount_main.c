@@ -1,20 +1,11 @@
-#define FUSE_USE_VERSION 26
-
-#include <fuse.h>
-#include <stdio.h>
-
-#include "phdr.h"
-
-//Globals
-struct luks_private {
-    int device_fd, mk_len;
-    struct luks_phdr hdr;
-    char ** mk;
-};
+#include "mount_main.h"
 
 struct fuse_operations luks_oper = {
-//    .read = luks_read,
+    .read = luks_read,
 //    .write = luks_write
+    .open = luks_open,
+    .readdir = luks_readdir,
+    .getattr = luks_getattr
 };
 
 int main(int argc, char * argv[])
@@ -37,7 +28,7 @@ int main(int argc, char * argv[])
     luks_init();
 
     //Open the device and get the header
-    if(luks_load_phdr(device_path, &private.hdr, &private.device_fd)) 
+    if(luks_load_phdr(device_path, &private.hdr, &private.device_fd))
         return 1;
 
     //Get the MK
@@ -47,7 +38,6 @@ int main(int argc, char * argv[])
         return 1;
     }
 
-
-   return 0; 
+    return fuse_main(argc, argv, &luks_oper, &private);
 
 }
