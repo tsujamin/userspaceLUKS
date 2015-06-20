@@ -81,7 +81,42 @@ int luks_read(const char *path, char *buf, size_t size, off_t offset,
 {
     if(strcmp(path, BLOCK_NODE) == 0) {
         struct luks_private *private = fuse_get_context()->private_data;
-        pread(private->device_fd, buf, size, offset);
+        char *dec_buf = malloc(512);
+        uint64_t sector = offset/512 + private->hdr.payloadOffset;
+        size_t size_read = 0;
+
+        //Decrypt first non-block sized sector, IV offset is start of payload
+        if(luks_decrypt_sectors(&private->hdr, private->device_fd, sector, private->hdr.payloadOffset,
+                            *private->mk, dec_buf, 512 - (offset % 512))) {
+            goto block_ret;
+        }
+        sector++;
+        size_read += 512 - (offset % 512);
+        memcpy(buf, dec_buf, size_read);
+
+        //Read middle blocks
+        while(size_read < (size & ~0x1FF)) { //TODO check
+            if(luks_decrypt_sectors(&private->hdr, private->device_fd, sector, private->hdr.payloadOffset,
+                                *private->mk, dec_buf, 512)) {
+                goto block_ret;
+            }
+            sector++;
+            memcpy(buf + size_read, dec_buf, 512);
+            size_read += 512;
+        }
+
+        //decrypt last, non-block sized sector
+        if(size % 512) {
+            if(luks_decrypt_sectors(&private->hdr, private->device_fd, sector, private->hdr.payloadOffset,
+                                *private->mk, dec_buf, size % 512)) {
+                goto block_ret;
+            }
+            memcpy(buf + size_read, dec_buf, size % 512);
+            size_read += size % 512;
+        }
+
+block_ret:
+        memset(dec_buf, 0, 512);
         return size;
     }
 
