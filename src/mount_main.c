@@ -2,7 +2,7 @@
 
 struct fuse_operations luks_oper = {
     .read = luks_read,
-//    .write = luks_write
+    .write = luks_write,
     .open = luks_open,
     .readdir = luks_readdir,
     .getattr = luks_getattr
